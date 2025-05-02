@@ -1,212 +1,108 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { db } from "./lib/firebase";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-  Timestamp,
-  deleteDoc,
-  doc,
-} from "firebase/firestore";
-import Layout from "./layouts/layout";
-import AddRecordModal from "./components/addrecordmodal";
-import EditRecordModal from "./components/editrecordmodal";
-import ConfirmDeleteRecordModal from "./components/confirmdeleterecordmodal";
-import { toast } from "react-toastify";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
-interface RecordItem {
-  id: string;
-  plate_no: string;
-  type: string;
-  timestamp: Timestamp;
-}
+export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-interface SelectedRecord {
-  id: string;
-  plate_no: string;
-  type: string;
-  timestamp: Timestamp;
-}
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
 
-export default function TablePage() {
-  const [data, setData] = useState<RecordItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [type, setType] = useState("");
-  const [order, setOrder] = useState("DESC");
-  const [isOpenAddRecordModal, setIsOpenAddRecordModal] = useState(false);
-  const [isOpenEditRecordModal, setIsOpenEditRecordModal] = useState(false);
-  const [isOpenConfirmDeleteRecordModal, setIsOpenConfirmDeleteRecordModal] =
-    useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<SelectedRecord | null>(
-    null
-  );
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
 
-  useEffect(() => {
-    const q = query(
-      collection(db, "records"),
-      orderBy("timestamp", order === "ASC" ? "asc" : "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (querySnapshot) => {
-        const records: RecordItem[] = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<RecordItem, "id">),
-        }));
-        setData(records);
-      },
-      (err) => {
-        console.error("Error fetching records:", err);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [order]);
-
-  const filteredData = data.filter((item) => {
-    const matchSearch = item.plate_no
-      .toLowerCase()
-      .includes(search.toLowerCase());
-    const matchType = type ? item.type === type : true;
-    return matchSearch && matchType;
-  });
-
-  const toggleAddVehicleModal = () => {
-    setIsOpenAddRecordModal((prev) => !prev);
-  };
-
-  const toggleEditVehicleModal = (record: SelectedRecord) => {
-    setSelectedRecord(record);
-    setIsOpenEditRecordModal(true);
-  };
-
-  const toggleConfirmDeleteModal = (recordId: string) => {
-    setSelectedRecordId(recordId);
-    setIsOpenConfirmDeleteRecordModal(true);
-  };
-
-  const handleDeleteConfirmed = async () => {
-    if (!selectedRecordId) return;
+    if (!trimmedEmail || !trimmedPassword) {
+      toast.error("Please fill in all fields.");
+      return;
+    }
 
     try {
-      await deleteDoc(doc(db, "records", selectedRecordId));
-      toast.success("Record deleted successfully");
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", trimmedEmail));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const userData = querySnapshot.docs[0].data();
+        console.log("User found:", userData);
+
+        // Simple password match (insecure: only for demo)
+        if (userData.password === trimmedPassword) {
+          localStorage.setItem(
+            "user",
+            JSON.stringify({ email: userData.email })
+          );
+          toast.success("Login successful!");
+          console.log("Login successful, redirecting...");
+          router.push("/dashboard");
+        } else {
+          console.log("Incorrect password");
+          setError("Invalid credentials");
+          toast.error("Invalid email or password");
+        }
+      } else {
+        console.log("No user found with that email");
+        setError("User not found");
+        toast.error("Invalid email or password");
+      }
     } catch (err) {
-      console.error("Error deleting record:", err);
-      toast.error("Failed to delete record");
-    } finally {
-      setIsOpenConfirmDeleteRecordModal(false);
-      setSelectedRecordId(null);
+      console.error("Login failed:", err);
+      setError("Login failed. Try again.");
+      toast.error("An error occurred during login");
     }
   };
 
   return (
-    <Layout>
-      {isOpenAddRecordModal && <AddRecordModal />}
-      {isOpenEditRecordModal && selectedRecord && (
-        <EditRecordModal
-          record={selectedRecord}
-          closeModal={() => setIsOpenEditRecordModal(false)}
-        />
-      )}
-      {isOpenConfirmDeleteRecordModal && selectedRecordId && (
-        <ConfirmDeleteRecordModal
-          recordId={selectedRecordId}
-          message="Are you sure to delete this record?"
-          closeModal={() => setIsOpenConfirmDeleteRecordModal(false)}
-          onConfirm={handleDeleteConfirmed}
-        />
-      )}
-
-      <div className="p-4">
-        <div className="flex flex-wrap justify-between items-center mb-2">
-          <h1 className="text-xl font-bold w-full sm:w-auto">Records</h1>
-          <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="border border-gray-500 px-2 py-1.5"
-              placeholder="Search plate #"
-            />
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="px-4 py-2 border border-gray-500 text-sm sm:text-base"
-            >
-              <option value="">All</option>
-              <option value="check-in">Check-in</option>
-              <option value="check-out">Check-out</option>
-            </select>
-            <select
-              value={order}
-              onChange={(e) => setOrder(e.target.value)}
-              className="px-4 py-2 border border-gray-500 text-sm sm:text-base"
-            >
-              <option value="ASC">ASC</option>
-              <option value="DESC">DESC</option>
-            </select>
-          </div>
+    <main className="flex fixed inset-0 items-center justify-center min-h-screen p-4 bg-gray-100">
+      <section className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm">
+        <div className="flex justify-center items-center mb-4">
+          <h1 className="text-2xl font-bold">Drive Check</h1>
         </div>
-
-        <div className="flex justify-end mb-2">
-          <button
-            onClick={toggleAddVehicleModal}
-            className="px-4 py-2 text-blue-100 bg-blue-500 rounded hover:opacity-50"
+        <div className="flex justify-center space-x-4">
+          <h1 className="text-lg mb-4 text-blue-500">Log In</h1>
+          <a
+            href="/signup"
+            className="border-l border-gray-500 pl-3 text-lg mb-4"
           >
-            Add Record
-          </button>
+            Sign Up
+          </a>
         </div>
+        <form onSubmit={handleLogin} className="flex flex-col gap-4">
+          <input
+            type="email"
+            placeholder="Email"
+            className="p-2 border rounded"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200">
-            <thead>
-              <tr className="bg-gray-100 border-b border-gray-200">
-                <th className="py-2 px-4 text-left">Plate Number</th>
-                <th className="py-2 px-4 text-left">Type</th>
-                <th className="py-2 px-4 text-left">Date & Time</th>
-                <th className="py-2 px-4 text-left">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.map((item) => (
-                <tr
-                  key={item.id}
-                  className="hover:bg-gray-100 border-b border-gray-200"
-                >
-                  <td className="py-2 px-4">{item.plate_no}</td>
-                  <td
-                    className={
-                      item.type === "check-in"
-                        ? "py-2 px-4 text-green-500"
-                        : "py-2 px-4 text-red-500"
-                    }
-                  >
-                    {item.type}
-                  </td>
-                  <td className="py-2 px-4">
-                    {new Date(item.timestamp.toDate()).toLocaleString()}
-                  </td>
-                  <td className="py-2 px-4 space-x-4">
-                    <i
-                      className="fas fa-pencil text-yellow-500 hover:opacity-50 cursor-pointer"
-                      onClick={() => toggleEditVehicleModal(item)}
-                    ></i>
-                    <i
-                      className="fas fa-trash text-red-500 hover:opacity-50 cursor-pointer"
-                      onClick={() => toggleConfirmDeleteModal(item.id)}
-                    ></i>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </Layout>
+          <input
+            type="password"
+            placeholder="Password"
+            className="p-2 border rounded"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+
+          {error && <p className="text-red-500">{error}</p>}
+
+          <button type="submit" className="bg-blue-500 text-white p-2 rounded">
+            Log In
+          </button>
+        </form>
+      </section>
+
+      <ToastContainer />
+    </main>
   );
 }
