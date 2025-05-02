@@ -26,7 +26,7 @@ export default function SignupPage() {
       if (!res.ok) throw new Error(data.error || "Signup failed");
 
       toast.success(data.message || "Check your email for the auth code");
-      router.push("/login");
+      router.push("/");
     } catch (err: any) {
       setError(err.message);
       toast.error(err.message);
