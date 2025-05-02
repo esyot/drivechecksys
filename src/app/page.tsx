@@ -1,103 +1,212 @@
-import Image from "next/image";
+"use client";
+import { useState, useEffect } from "react";
+import { db } from "./lib/firebase";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  Timestamp,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
+import Layout from "./layouts/layout";
+import AddRecordModal from "./components/addrecordmodal";
+import EditRecordModal from "./components/editrecordmodal";
+import ConfirmDeleteRecordModal from "./components/confirmdeleterecordmodal";
+import { toast } from "react-toastify";
 
-export default function Home() {
+interface RecordItem {
+  id: string;
+  plate_no: string;
+  type: string;
+  timestamp: Timestamp;
+}
+
+interface SelectedRecord {
+  id: string;
+  plate_no: string;
+  type: string;
+  timestamp: Timestamp;
+}
+
+export default function TablePage() {
+  const [data, setData] = useState<RecordItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [type, setType] = useState("");
+  const [order, setOrder] = useState("DESC");
+  const [isOpenAddRecordModal, setIsOpenAddRecordModal] = useState(false);
+  const [isOpenEditRecordModal, setIsOpenEditRecordModal] = useState(false);
+  const [isOpenConfirmDeleteRecordModal, setIsOpenConfirmDeleteRecordModal] =
+    useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<SelectedRecord | null>(
+    null
+  );
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "records"),
+      orderBy("timestamp", order === "ASC" ? "asc" : "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const records: RecordItem[] = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<RecordItem, "id">),
+        }));
+        setData(records);
+      },
+      (err) => {
+        console.error("Error fetching records:", err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [order]);
+
+  const filteredData = data.filter((item) => {
+    const matchSearch = item.plate_no
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    const matchType = type ? item.type === type : true;
+    return matchSearch && matchType;
+  });
+
+  const toggleAddVehicleModal = () => {
+    setIsOpenAddRecordModal((prev) => !prev);
+  };
+
+  const toggleEditVehicleModal = (record: SelectedRecord) => {
+    setSelectedRecord(record);
+    setIsOpenEditRecordModal(true);
+  };
+
+  const toggleConfirmDeleteModal = (recordId: string) => {
+    setSelectedRecordId(recordId);
+    setIsOpenConfirmDeleteRecordModal(true);
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (!selectedRecordId) return;
+
+    try {
+      await deleteDoc(doc(db, "records", selectedRecordId));
+      toast.success("Record deleted successfully");
+    } catch (err) {
+      console.error("Error deleting record:", err);
+      toast.error("Failed to delete record");
+    } finally {
+      setIsOpenConfirmDeleteRecordModal(false);
+      setSelectedRecordId(null);
+    }
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <Layout>
+      {isOpenAddRecordModal && <AddRecordModal />}
+      {isOpenEditRecordModal && selectedRecord && (
+        <EditRecordModal
+          record={selectedRecord}
+          closeModal={() => setIsOpenEditRecordModal(false)}
         />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+      )}
+      {isOpenConfirmDeleteRecordModal && selectedRecordId && (
+        <ConfirmDeleteRecordModal
+          recordId={selectedRecordId}
+          message="Are you sure to delete this record?"
+          closeModal={() => setIsOpenConfirmDeleteRecordModal(false)}
+          onConfirm={handleDeleteConfirmed}
+        />
+      )}
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+      <div className="p-4">
+        <div className="flex flex-wrap justify-between items-center mb-2">
+          <h1 className="text-xl font-bold w-full sm:w-auto">Records</h1>
+          <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border border-gray-500 px-2 py-1.5"
+              placeholder="Search plate #"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="px-4 py-2 border border-gray-500 text-sm sm:text-base"
+            >
+              <option value="">All</option>
+              <option value="check-in">Check-in</option>
+              <option value="check-out">Check-out</option>
+            </select>
+            <select
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+              className="px-4 py-2 border border-gray-500 text-sm sm:text-base"
+            >
+              <option value="ASC">ASC</option>
+              <option value="DESC">DESC</option>
+            </select>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={toggleAddVehicleModal}
+            className="px-4 py-2 text-blue-100 bg-blue-500 rounded hover:opacity-50"
+          >
+            Add Record
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white border border-gray-200">
+            <thead>
+              <tr className="bg-gray-100 border-b border-gray-200">
+                <th className="py-2 px-4 text-left">Plate Number</th>
+                <th className="py-2 px-4 text-left">Type</th>
+                <th className="py-2 px-4 text-left">Date & Time</th>
+                <th className="py-2 px-4 text-left">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredData.map((item) => (
+                <tr
+                  key={item.id}
+                  className="hover:bg-gray-100 border-b border-gray-200"
+                >
+                  <td className="py-2 px-4">{item.plate_no}</td>
+                  <td
+                    className={
+                      item.type === "check-in"
+                        ? "py-2 px-4 text-green-500"
+                        : "py-2 px-4 text-red-500"
+                    }
+                  >
+                    {item.type}
+                  </td>
+                  <td className="py-2 px-4">
+                    {new Date(item.timestamp.toDate()).toLocaleString()}
+                  </td>
+                  <td className="py-2 px-4 space-x-4">
+                    <i
+                      className="fas fa-pencil text-yellow-500 hover:opacity-50 cursor-pointer"
+                      onClick={() => toggleEditVehicleModal(item)}
+                    ></i>
+                    <i
+                      className="fas fa-trash text-red-500 hover:opacity-50 cursor-pointer"
+                      onClick={() => toggleConfirmDeleteModal(item.id)}
+                    ></i>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Layout>
   );
 }
