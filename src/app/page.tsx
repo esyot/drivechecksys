@@ -34,7 +34,6 @@ export default function LoginPage() {
         const userData = querySnapshot.docs[0].data();
         console.log("User found:", userData);
 
-        // Simple password match (insecure: only for demo)
         if (userData.password === trimmedPassword) {
           localStorage.setItem(
             "user",
